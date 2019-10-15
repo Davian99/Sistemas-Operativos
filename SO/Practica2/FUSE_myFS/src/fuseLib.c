@@ -474,6 +474,35 @@ static int my_truncate(const char *path, off_t size)
     return 0;
 }
 
+/*
+ * 
+ * 
+*/
+static int my_unlink(const char *path)
+{
+    int idxDir;
+    fprintf(stderr, "--->>>my_unlink: path %s\n", path);
+    if((idxDir = findFileByName(&myFileSystem, (char *)path + 1)) == -1) {
+        return -ENOENT;
+    }
+
+    /*
+    int aux = idxDir;
+    while (aux < myFileSystem.directory.numFiles-1) {
+        myFileSystem.directory.files[aux] = myFileSystem.directory.files[aux+1];
+        aux++;
+    }
+    myFileSystem.directory.numFiles--;
+    */
+    myFileSystem.directory.files[idxDir].freeFile = true;
+    myFileSystem.directory.numFiles--;
+    
+    updateDirectory(&myFileSystem);
+    updateBitmap(&myFileSystem);
+    updateNode(&myFileSystem, myFileSystem.directory.files[idxDir].nodeIdx, myFileSystem.nodes[myFileSystem.directory.files[idxDir].nodeIdx]);
+    updateSuperBlock(&myFileSystem);
+    return 0;
+}
 
 struct fuse_operations myFS_operations = {
     .getattr	= my_getattr,					// Obtain attributes from a file
@@ -483,5 +512,6 @@ struct fuse_operations myFS_operations = {
     .write		= my_write,						// Write data into a file already opened
     .release	= my_release,					// Close an opened file
     .mknod		= my_mknod,						// Create a new file
+    .unlink     = my_unlink,
 };
 
