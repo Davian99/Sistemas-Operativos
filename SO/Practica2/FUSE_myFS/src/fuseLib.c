@@ -475,8 +475,8 @@ static int my_truncate(const char *path, off_t size)
 }
 
 /*
- * 
- * 
+ * @brief Delete a file
+ * @param path file path
 */
 static int my_unlink(const char *path)
 {
@@ -486,22 +486,59 @@ static int my_unlink(const char *path)
         return -ENOENT;
     }
 
-    /*
-    int aux = idxDir;
-    while (aux < myFileSystem.directory.numFiles-1) {
-        myFileSystem.directory.files[aux] = myFileSystem.directory.files[aux+1];
-        aux++;
-    }
-    myFileSystem.directory.numFiles--;
-    */
+    int idxNodeI = myFileSystem.directory.files[idxDir].nodeIdx;
+
+    if(resizeNode(idxNodeI, 0) < 0)
+        return -EIO;
+
+    myFileSystem.nodes[idxNodeI]->freeNode = true;
+    updateNode(&myFileSystem, idxNodeI, myFileSystem.nodes[idxNodeI]);
+
+    free(myFileSystem.nodes[idxNodeI]);
+    myFileSystem.nodes[idxNodeI] = NULL;
+
     myFileSystem.directory.files[idxDir].freeFile = true;
     myFileSystem.directory.numFiles--;
     
     updateDirectory(&myFileSystem);
-    updateBitmap(&myFileSystem);
-    updateNode(&myFileSystem, myFileSystem.directory.files[idxDir].nodeIdx, myFileSystem.nodes[myFileSystem.directory.files[idxDir].nodeIdx]);
-    updateSuperBlock(&myFileSystem);
+    myFileSystem.numFreeNodes++;
+
+    sync();
+
+    printf("Succesfull unlink\n");
+
     return 0;
+}
+
+static int my_read(const char *path, char *mem, size_t size, off_t offset, struct fuse_file_info *fi){
+
+    int toRead = size, totalRead = 0;
+    char buffer[BLOCK_SIZE_BYTES];
+    NodeStruct *node = myFileSystem.nodes[fi->fh];
+
+    fprintf(stderr, "--->>>my_read: path %s, size %zu, offset %jd, fh %"PRIu64"\n", path, size, (intmax_t)offset, fi->fh);
+
+    while(toRead){
+        int i;
+        int currentBlock, offBlock;
+        currentBlock = node->blocks[offset / BLOCK_SIZE_BYTES];
+        offBlock = offset % BLOCK_SIZE_BYTES;
+
+        if(readBlock(&myFileSystem, currentBlock, &buffer) == -1){
+            fprintf(stderr, "Error reading blocks\n");
+            return -EIO;
+        }
+
+        for(i = offBlock; (i < BLOCK_SIZE_BYTES) && (totalRead < size); ++i){
+            mem[totalRead] = buffer[i];
+            totalRead++;
+        }
+
+        toRead -= (i - offBlock);
+        offset += (i - offBlock);
+    }
+
+    return totalRead;
 }
 
 struct fuse_operations myFS_operations = {
@@ -512,6 +549,7 @@ struct fuse_operations myFS_operations = {
     .write		= my_write,						// Write data into a file already opened
     .release	= my_release,					// Close an opened file
     .mknod		= my_mknod,						// Create a new file
-    .unlink     = my_unlink,
+    .unlink     = my_unlink,                    // Delete a file
+    .read       = my_read,                      // Read from file
 };
 
